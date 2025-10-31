@@ -11,7 +11,7 @@ on:
   # Each OS needs a time of day distinct from other apps, LoopWorkspace uses 9 every Wed and 7 every 1st of month
   schedule:
     # avoid starting an action at hh:00 when GitHub resources are impacted
-    - cron: "33 9 * * 3" # Checks for updates at 09:33 UTC every Wednesdaya
+    - cron: "33 9 * * 3" # Checks for updates at 09:33 UTC every Wednesday
     - cron: "33 7 1 * *" # Builds the app on the 1st of every month at 07:33 UTC
 
 env:
@@ -282,7 +282,12 @@ jobs:
 
           # Add patches for customization of additional submodules by following the templates above, 
           # and make sure to specify the submodule by setting "--directory=(submodule_name)".
-         # The lines below add the customizations listed using the CustomizationSelect script
+          # The lines below add the customizations listed using the CustomizationSelect script
+          # The "\" is a continuation character 
+          #   the line following a "\" should not be blank
+          /bin/bash -c "$(curl -fsSL \
+          https://raw.githubusercontent.com/loopandlearn/lnl-scripts/main/CustomizationSelect.sh)" \
+          dexcom_upload_readings# The lines below add the customizations listed using the CustomizationSelect script
           # The "\" is a continuation character 
           #   the line following a "\" should not be blank
           /bin/bash -c "$(curl -fsSL \
@@ -296,11 +301,28 @@ jobs:
           watch_title \
           2hlollipop \
           meal_days \
+          no_auth \
           profiles \
           basal_lock \
           live_activity \
           negative_insulin \
-          no_auth \
+          remote_window
+
+          # the final customization listed above CANNOT have a continuation character
+          # more customizations can be pasted after this line
+          future_carbs_4h 
+          high_carb_limit \
+          override_sens \
+          now_line \
+          lnl_icon \
+          watch_title \
+          2hlollipop \
+          meal_days \
+          meal_week \
+          profiles \
+          basal_lock \
+          live_activity \
+          negative_insulin \
           remote_window
 
           # the final customization listed above CANNOT have a continuation character
