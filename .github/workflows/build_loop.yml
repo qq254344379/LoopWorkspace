@@ -287,11 +287,7 @@ jobs:
           #   the line following a "\" should not be blank
           /bin/bash -c "$(curl -fsSL \
           https://raw.githubusercontent.com/loopandlearn/lnl-scripts/main/CustomizationSelect.sh)" \
-          dexcom_upload_readings# The lines below add the customizations listed using the CustomizationSelect script
-          # The "\" is a continuation character 
-          #   the line following a "\" should not be blank
-          /bin/bash -c "$(curl -fsSL \
-          https://raw.githubusercontent.com/loopandlearn/lnl-scripts/main/CustomizationSelect.sh)" \
+          no_auth \
           future_carbs_4h \
           high_carb_limit \
           override_sens \
@@ -300,24 +296,6 @@ jobs:
           watch_title \
           2hlollipop \
           meal_days \
-          no_auth \
-          profiles \
-          basal_lock \
-          live_activity \
-          negative_insulin \
-          remote_window
-
-          # the final customization listed above CANNOT have a continuation character
-          # more customizations can be pasted after this line
-          future_carbs_4h 
-          high_carb_limit \
-          override_sens \
-          now_line \
-          lnl_icon \
-          watch_title \
-          2hlollipop \
-          meal_days \
-          meal_week \
           profiles \
           basal_lock \
           live_activity \
