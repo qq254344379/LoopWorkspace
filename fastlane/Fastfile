@@ -54,7 +54,7 @@ platform :ios do
     
     match(
       type: "appstore",
-      readonly: false,
+      readonly: true,
       git_basic_authorization: Base64.strict_encode64("#{GITHUB_REPOSITORY_OWNER}:#{GH_PAT}"),
       app_identifier: [
         "com.#{TEAMID}.loopkit.Loop", 
@@ -247,7 +247,7 @@ platform :ios do
 
     match(
       type: "appstore",
-      readonly: false,
+      readonly: true,
       git_basic_authorization: Base64.strict_encode64("#{GITHUB_REPOSITORY_OWNER}:#{GH_PAT}"),
       app_identifier: [],
     )
