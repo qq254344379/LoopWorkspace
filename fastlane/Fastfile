@@ -27,6 +27,7 @@ platform :ios do
   desc "Build Loop"
   lane :build_loop do
     setup_ci if ENV['CI']
+    ENV["MATCH_READONLY"] = false.to_s
     
     update_project_team(
       path: "#{GITHUB_WORKSPACE}/Loop/Loop.xcodeproj",
@@ -53,6 +54,8 @@ platform :ios do
     
     match(
       type: "appstore",
+      readonly: false,
+      force: true,
       git_basic_authorization: Base64.strict_encode64("#{GITHUB_REPOSITORY_OWNER}:#{GH_PAT}"),
       app_identifier: [
         "com.#{TEAMID}.loopkit.Loop", 
@@ -125,10 +128,116 @@ platform :ios do
       buildlog_path: 'buildlog'
     )
 
+    # Embed pump driver frameworks (ApexKitBLE and EmbectaKitBLE)
+    embed_pump_frameworks
+
     copy_artifacts(
       target_path: "artifacts",
       artifacts: ["*.mobileprovision", "*.ipa", "*.dSYM.zip"]
     )
+  end
+
+  desc "Embed Pump Driver Frameworks into Loop.app"
+  lane :embed_pump_frameworks do
+    # Define source framework paths
+    frameworks = [
+      {
+        name: "ApexKitBLE",
+        plugin_path: "#{GITHUB_WORKSPACE}/ApexKitBLE/ApexKitBLEPlugin",
+        main_path: "#{GITHUB_WORKSPACE}/ApexKitBLE/ApexKitBLE"
+      },
+      {
+        name: "EmbectaKitBLE",
+        plugin_path: "#{GITHUB_WORKSPACE}/EmbectaKitBLE/EmbectaKitBLEPlugin",
+        main_path: "#{GITHUB_WORKSPACE}/EmbectaKitBLE/EmbectaKitBLE"
+      }
+    ]
+
+    # Check if any pump driver frameworks exist
+    has_frameworks = frameworks.any? { |fw| File.directory?(fw[:main_path]) }
+
+    unless has_frameworks
+      puts "No pump driver frameworks found. Skipping embedding."
+      next
+    end
+
+    puts "Found pump driver frameworks. Embedding into Loop.app..."
+
+    # Create temp directory for IPA manipulation
+    temp_dir = "#{GITHUB_WORKSPACE}/temp_ipa"
+    FileUtils.rm_rf(temp_dir)
+    FileUtils.mkdir_p(temp_dir)
+
+    # Unzip the IPA
+    ipa_path = "#{GITHUB_WORKSPACE}/Loop.ipa"
+    sh "unzip -q #{ipa_path} -d #{temp_dir}"
+
+    # Path to the app bundle
+    app_path = Dir.glob("#{temp_dir}/Payload/*.app").first
+    frameworks_dest = "#{app_path}/Frameworks"
+    FileUtils.mkdir_p(frameworks_dest)
+
+    # Copy and sign each framework
+    frameworks.each do |fw|
+      next unless File.directory?(fw[:main_path])
+
+      puts "Processing #{fw[:name]}..."
+
+      # For ApexKitBLE and EmbectaKitBLE, we need to copy the .framework bundles
+      # The structure is: ApexKitBLE/ApexKitBLE/ (contains Info.plist, binary, etc.)
+      # We need to create proper .framework bundles
+
+      fw_name = fw[:name]
+      fw_bundle = "#{frameworks_dest}/#{fw_name}.framework"
+      
+      # Create framework bundle structure
+      FileUtils.mkdir_p(fw_bundle)
+
+      # Copy the main framework contents
+      # The ApexKitBLE/ApexKitBLE directory contains: ApexKitBLE (binary), Info.plist, Assets.car, etc.
+      main_fw_path = fw[:main_path]
+      
+      # Copy all files from the main framework directory
+      FileUtils.cp_r(Dir.glob("#{main_fw_path}/*"), fw_bundle)
+
+      # Also copy the plugin framework if it exists
+      plugin_path = fw[:plugin_path]
+      if File.directory?(plugin_path)
+        plugin_name = File.basename(plugin_path)
+        plugin_bundle = "#{frameworks_dest}/#{plugin_name}.framework"
+        FileUtils.mkdir_p(plugin_bundle)
+        FileUtils.cp_r(Dir.glob("#{plugin_path}/*"), plugin_bundle)
+        
+        # Sign the plugin framework
+        sh "codesign --force --sign - '#{plugin_bundle}'"
+      end
+
+      # Sign the main framework
+      sh "codesign --force --sign - '#{fw_bundle}'"
+
+      puts "Embedded #{fw_name}.framework"
+    end
+
+    # Re-sign the app with the provisioning profile
+    # Use the distribution certificate for signing
+    # The frameworks are already ad-hoc signed which is acceptable for embedded frameworks
+    
+    # Find the distribution certificate
+    dist_cert = Dir.glob("#{ENV['HOME']}/Library/MobileDevice/Certificates/*.p12").first
+    
+    # Re-sign the app bundle
+    sh "codesign --force --sign 'iPhone Distribution' '#{app_path}'"
+
+    # Repackage the IPA
+    FileUtils.rm_f(ipa_path)
+    Dir.chdir(temp_dir) do
+      sh "zip -qr #{ipa_path} Payload"
+    end
+
+    # Cleanup
+    FileUtils.rm_rf(temp_dir)
+
+    puts "Successfully embedded pump driver frameworks and re-signed the IPA"
   end
 
   desc "Push to TestFlight"
@@ -245,6 +354,7 @@ platform :ios do
 
     match(
       type: "appstore",
+      readonly: false,
       git_basic_authorization: Base64.strict_encode64("#{GITHUB_REPOSITORY_OWNER}:#{GH_PAT}"),
       app_identifier: [],
     )
@@ -279,7 +389,7 @@ platform :ios do
     api_key = app_store_connect_api_key(
       key_id: ENV["FASTLANE_KEY_ID"],
       issuer_id: ENV["FASTLANE_ISSUER_ID"],
-      key_content: ENV["FASTLANE_KEY"] # Ensure valid key content
+      key_content: ENV["FASTLANE_KEY"] # Ensure valid valid key content
     )
 
     # Initialize flag to track if renewal of certificates is needed
