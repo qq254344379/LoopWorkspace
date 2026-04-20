@@ -245,6 +245,15 @@ platform :ios do
       entitlements_path = "#{temp_dir}/app_entitlements.plist"
       sh "/usr/libexec/PlistBuddy -x -c 'Print Entitlements' '#{profile_plist}' > '#{entitlements_path}'"
       
+      # Fix NFC entitlement: remove NDEF which is deprecated in iOS 15+
+      # NDEF is disallowed for apps targeting iOS 15.1+
+      nfc_entitlement = `/usr/libexec/PlistBuddy -c 'Print com.apple.developer.nfc.readersession.formats' '#{entitlements_path}' 2>/dev/null`.strip
+      if nfc_entitlement.include?('NDEF')
+        puts "Removing deprecated NDEF from NFC entitlement..."
+        # Remove NDEF from the array, keeping other formats
+        sh "/usr/libexec/PlistBuddy -c 'Delete com.apple.developer.nfc.readersession.formats:0' '#{entitlements_path}' 2>/dev/null || true"
+      end
+      
       # Re-sign with the extracted entitlements
       sh "codesign --force --sign '#{signing_identity}' --entitlements '#{entitlements_path}' '#{app_path}'"
     else
