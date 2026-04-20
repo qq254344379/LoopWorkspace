@@ -177,6 +177,18 @@ platform :ios do
     frameworks_dest = "#{app_path}/Frameworks"
     FileUtils.mkdir_p(frameworks_dest)
 
+    # Get the signing identity before processing frameworks
+    # We need to use the same certificate as the main app for App Store submission
+    team_id = ENV["TEAMID"]
+    signing_identity = "Apple Distribution"
+    
+    # Try to find the exact certificate name in the keychain
+    cert_info = `security find-identity -v -p codesigning 2>/dev/null | grep -i distribution | head -1`.strip
+    if cert_info.include?('"')
+      signing_identity = cert_info.match(/"(.+)"/)[1]
+      puts "Found signing identity: #{signing_identity}"
+    end
+
     # Copy and sign each framework
     frameworks.each do |fw|
       next unless File.directory?(fw[:main_path])
@@ -208,32 +220,17 @@ platform :ios do
         FileUtils.mkdir_p(plugin_bundle)
         FileUtils.cp_r(Dir.glob("#{plugin_path}/*"), plugin_bundle)
         
-        # Sign the plugin framework
-        sh "codesign --force --sign - '#{plugin_bundle}'"
+        # Sign the plugin framework with the same certificate as the app
+        sh "codesign --force --sign '#{signing_identity}' '#{plugin_bundle}'"
       end
 
-      # Sign the main framework
-      sh "codesign --force --sign - '#{fw_bundle}'"
+      # Sign the main framework with the same certificate as the app
+      sh "codesign --force --sign '#{signing_identity}' '#{fw_bundle}'"
 
       puts "Embedded #{fw_name}.framework"
     end
 
-    # Re-sign the app with the correct distribution certificate
-    # We use the signing identity that was already configured by match
-    # The keychain already has the correct certificate installed
-    
-    # Get the team ID and construct the signing identity
-    team_id = ENV["TEAMID"]
-    signing_identity = "Apple Distribution: #{team_id}"
-    
-    # Try to find the exact certificate name in the keychain
-    cert_info = `security find-identity -v -p codesigning 2>/dev/null | grep -i distribution | head -1`.strip
-    if cert_info.include?('"')
-      signing_identity = cert_info.match(/"(.+)"/)[1]
-      puts "Found signing identity: #{signing_identity}"
-    end
-    
-    # Re-sign the app bundle
+    # Re-sign the app bundle with the same certificate
     sh "codesign --force --sign '#{signing_identity}' '#{app_path}'"
 
     # Repackage the IPA
