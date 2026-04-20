@@ -119,6 +119,9 @@ platform :ios do
       targets: ["Loop Widget Extension"]
     )
 
+    # Patch PluginManager to support embedded pump drivers
+    patch_plugin_manager
+
     gym(
       export_method: "app-store",
       scheme: "LoopWorkspace",
@@ -137,19 +140,72 @@ platform :ios do
     )
   end
 
-  desc "Embed Pump Driver Frameworks into Loop.app"
+  desc "Patch PluginManager.swift to support embedded pump drivers"
+  lane :patch_plugin_manager do
+    plugin_manager_path = "#{GITHUB_WORKSPACE}/Loop/Plugins/PluginManager.swift"
+    
+    unless File.exist?(plugin_manager_path)
+      puts "PluginManager.swift not found, skipping patch"
+      next
+    end
+    
+    content = File.read(plugin_manager_path)
+    
+    # 1. Replace fatalError("PrincipalClass does not conform to PumpManagerUIPlugin") with fallback
+    content = content.gsub(
+      'fatalError("PrincipalClass does not conform to PumpManagerUIPlugin")',
+      'log.error("PrincipalClass does not conform to PumpManagerUIPlugin, trying direct class lookup"); if let className = bundle.object(forInfoDictionaryKey: "LoopPluginPumpManagerClassName") as? String, let cls = NSClassFromString(className) as? PumpManagerUI.Type { log.info("Direct class resolution succeeded: %{public}@", className); return cls }; log.error("Direct class resolution also failed for identifier: %{public}@", name); return nil'
+    )
+    
+    # 2. Replace fatalError("PrincipalClass not found") with fallback
+    content = content.gsub(
+      'fatalError("PrincipalClass not found")',
+      'log.error("PrincipalClass not found, trying direct class lookup"); if let className = bundle.object(forInfoDictionaryKey: "LoopPluginPumpManagerClassName") as? String, let cls = NSClassFromString(className) as? PumpManagerUI.Type { log.info("Direct class resolution succeeded: %{public}@", className); return cls }; log.error("Direct class resolution also failed"); return nil'
+    )
+    
+    # 3. Similarly patch CGM, Service, StatefulPlugin, Onboarding, Support fatalError calls
+    content = content.gsub(
+      'fatalError("PrincipalClass does not conform to CGMManagerUIPlugin")',
+      'log.error("PrincipalClass does not conform to CGMManagerUIPlugin"); return nil'
+    )
+    content = content.gsub(
+      'fatalError("PrincipalClass does not conform to ServiceUIPlugin")',
+      'log.error("PrincipalClass does not conform to ServiceUIPlugin"); return nil'
+    )
+    content = content.gsub(
+      'fatalError("PrincipalClass does not conform to StatefulPlugin")',
+      'log.error("PrincipalClass does not conform to StatefulPlugin"); return nil'
+    )
+    content = content.gsub(
+      'fatalError("PrincipalClass does not conform to OnboardingUIPlugin")',
+      'log.error("PrincipalClass does not conform to OnboardingUIPlugin"); return nil'
+    )
+    content = content.gsub(
+      'fatalError("PrincipalClass does not conform to SupportUIPlugin")',
+      'log.error("PrincipalClass does not conform to SupportUIPlugin"); return nil'
+    )
+    
+    File.write(plugin_manager_path, content)
+    puts "Patched PluginManager.swift - replaced fatalError with graceful fallback"
+  end
+
+    desc "Embed Pump Driver Frameworks into Loop.app"
   lane :embed_pump_frameworks do
-    # Define source framework paths - each pump has main + plugin framework
+    # Define source framework paths - ONLY main BLE frameworks (not empty Plugin shells)
     frameworks = [
       {
         name: "ApexKitBLE",
         main_path: "#{GITHUB_WORKSPACE}/ApexKitBLE/ApexKitBLE",
-        plugin_path: "#{GITHUB_WORKSPACE}/ApexKitBLE/ApexKitBLEPlugin"
+        pump_manager_class: "ApexKitBLE.ApexKitPumpManager",
+        identifier: "Apex",
+        display_name: "Apex"
       },
       {
         name: "EmbectaKitBLE",
         main_path: "#{GITHUB_WORKSPACE}/EmbectaKitBLE/EmbectaKitBLE",
-        plugin_path: "#{GITHUB_WORKSPACE}/EmbectaKitBLE/EmbectaKitBLEPlugin"
+        pump_manager_class: "EmbectaKitBLE.EmbectaKitPumpManager",
+        identifier: "Embecta",
+        display_name: "Embecta"
       }
     ]
 
@@ -177,111 +233,67 @@ platform :ios do
     frameworks_dest = "#{app_path}/Frameworks"
     FileUtils.mkdir_p(frameworks_dest)
 
-    # Get the signing identity before processing frameworks
-    # We need to use the same certificate as the main app for App Store submission
-    team_id = ENV["TEAMID"]
+    # Get the signing identity
     signing_identity = "Apple Distribution"
-    
-    # Try to find the exact certificate name in the keychain
     cert_info = `security find-identity -v -p codesigning 2>/dev/null | grep -i distribution | head -1`.strip
     if cert_info.include?('"')
       signing_identity = cert_info.match(/"(.+)"/)[1]
       puts "Found signing identity: #{signing_identity}"
     end
 
-    # Copy and sign each framework
+    # Embed ONLY main BLE frameworks (NOT Plugin frameworks - they are empty shells)
     frameworks.each do |fw|
-      # Embed the main BLE framework
       if File.directory?(fw[:main_path])
         puts "Processing #{fw[:name]}..."
 
         fw_bundle = "#{frameworks_dest}/#{fw[:name]}.framework"
         FileUtils.mkdir_p(fw_bundle)
-        
-        # Copy all files from the main framework directory
         FileUtils.cp_r(Dir.glob("#{fw[:main_path]}/*"), fw_bundle)
         
-        # Remove existing code signature before re-signing
-        # The frameworks were originally signed with the author's TestFlight cert (TeamID: 8FA26U74B9)
-        # We need to remove it so it can be re-signed with our cert
+        # Remove original signature
         sh "codesign --remove-signature '#{fw_bundle}' 2>/dev/null || true"
         sh "codesign --remove-signature '#{fw_bundle}/#{fw[:name]}' 2>/dev/null || true"
         
-        # Sign the main framework
+        # Add PumpManagerIdentifier to Info.plist so PluginManager can discover it
+        info_plist = "#{fw_bundle}/Info.plist"
+        sh "/usr/libexec/PlistBuddy -c 'Add :com.loopkit.Loop.PumpManagerIdentifier string #{fw[:identifier]}' '#{info_plist}' 2>/dev/null || /usr/libexec/PlistBuddy -c 'Set :com.loopkit.Loop.PumpManagerIdentifier #{fw[:identifier]}' '#{info_plist}'"
+        sh "/usr/libexec/PlistBuddy -c 'Add :com.loopkit.Loop.PumpManagerDisplayName string #{fw[:display_name]}' '#{info_plist}' 2>/dev/null || /usr/libexec/PlistBuddy -c 'Set :com.loopkit.Loop.PumpManagerDisplayName #{fw[:display_name]}' '#{info_plist}'"
+        
+        # Add custom key for direct class resolution
+        sh "/usr/libexec/PlistBuddy -c 'Add :LoopPluginPumpManagerClassName string #{fw[:pump_manager_class]}' '#{info_plist}' 2>/dev/null || /usr/libexec/PlistBuddy -c 'Set :LoopPluginPumpManagerClassName #{fw[:pump_manager_class]}' '#{info_plist}'"
+        
+        # Sign the framework
         sh "codesign --force --sign '#{signing_identity}' '#{fw_bundle}'"
         
-        puts "Embedded #{fw[:name]}.framework"
-      end
-
-      # Embed the corresponding Plugin framework
-      if File.directory?(fw[:plugin_path])
-        plugin_name = File.basename(fw[:plugin_path])  # e.g., "ApexKitBLEPlugin"
-        puts "Processing #{plugin_name}..."
-
-        plugin_bundle = "#{frameworks_dest}/#{plugin_name}.framework"
-        FileUtils.mkdir_p(plugin_bundle)
-        
-        # Copy all files from the plugin framework directory
-        FileUtils.cp_r(Dir.glob("#{fw[:plugin_path]}/*"), plugin_bundle)
-        
-        # Remove existing code signature before re-signing
-        sh "codesign --remove-signature '#{plugin_bundle}' 2>/dev/null || true"
-        sh "codesign --remove-signature '#{plugin_bundle}/#{plugin_name}' 2>/dev/null || true"
-        
-        # Sign the plugin framework
-        sh "codesign --force --sign '#{signing_identity}' '#{plugin_bundle}'"
-        
-        puts "Embedded #{plugin_name}.framework"
+        puts "Embedded #{fw[:name]}.framework with PumpManagerIdentifier=#{fw[:identifier]}"
       end
     end
 
-    # Re-sign the app bundle with the same certificate
-    # Use resign action which properly handles entitlements
-    # But we need to do it manually since we're working with an IPA
-    
-    # Extract the embedded provisioning profile to get entitlements
+    # Re-sign the app
     profile_path = "#{app_path}/embedded.mobileprovision"
     if File.exist?(profile_path)
-      # Decode the provisioning profile to extract entitlements
       profile_plist = "#{temp_dir}/profile.plist"
       sh "security cms -D -i '#{profile_path}' > '#{profile_plist}'"
-      
-      # Extract entitlements from profile
       entitlements_path = "#{temp_dir}/app_entitlements.plist"
       sh "/usr/libexec/PlistBuddy -x -c 'Print Entitlements' '#{profile_plist}' > '#{entitlements_path}'"
-      
-      # Fix NFC entitlement: remove NDEF which is deprecated in iOS 15+
-      # NDEF is disallowed for apps targeting iOS 15.1+
       nfc_entitlement = `/usr/libexec/PlistBuddy -c 'Print com.apple.developer.nfc.readersession.formats' '#{entitlements_path}' 2>/dev/null`.strip
       if nfc_entitlement.include?('NDEF')
-        puts "Removing deprecated NDEF from NFC entitlement..."
-        # Remove NDEF from the array, keeping other formats
         sh "/usr/libexec/PlistBuddy -c 'Delete com.apple.developer.nfc.readersession.formats:0' '#{entitlements_path}' 2>/dev/null || true"
       end
-      
-      # Re-sign with the extracted entitlements
       sh "codesign --force --sign '#{signing_identity}' --entitlements '#{entitlements_path}' '#{app_path}'"
     else
-      # Fallback: just re-sign without entitlements (may fail on App Store)
       sh "codesign --force --sign '#{signing_identity}' '#{app_path}'"
     end
 
-    # Repackage the IPA - include ALL folders, not just Payload
-    # IPA structure: Payload/, SwiftSupport/, WatchKitSupport2/, etc.
-    # First, clean up temp files that shouldn't be in the IPA
+    # Repackage IPA
     FileUtils.rm_f("#{temp_dir}/app_entitlements.plist")
     FileUtils.rm_f("#{temp_dir}/profile.plist")
-    
     FileUtils.rm_f(ipa_path)
     Dir.chdir(temp_dir) do
-      # Find all top-level directories and files (excluding hidden files)
       all_items = Dir.glob("*").reject { |f| f.start_with?(".") }
       sh "zip -qr #{ipa_path} #{all_items.join(' ')}"
     end
-
-    # Cleanup
     FileUtils.rm_rf(temp_dir)
-
     puts "Successfully embedded pump driver frameworks and re-signed the IPA"
   end
 
