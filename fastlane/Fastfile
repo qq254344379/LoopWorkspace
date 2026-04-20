@@ -201,6 +201,12 @@ platform :ios do
         # Copy all files from the main framework directory
         FileUtils.cp_r(Dir.glob("#{fw[:main_path]}/*"), fw_bundle)
         
+        # Remove existing code signature before re-signing
+        # The frameworks were originally signed with the author's TestFlight cert (TeamID: 8FA26U74B9)
+        # We need to remove it so it can be re-signed with our cert
+        sh "codesign --remove-signature '#{fw_bundle}' 2>/dev/null || true"
+        sh "codesign --remove-signature '#{fw_bundle}/#{fw[:name]}' 2>/dev/null || true"
+        
         # Sign the main framework
         sh "codesign --force --sign '#{signing_identity}' '#{fw_bundle}'"
         
@@ -217,6 +223,10 @@ platform :ios do
         
         # Copy all files from the plugin framework directory
         FileUtils.cp_r(Dir.glob("#{fw[:plugin_path]}/*"), plugin_bundle)
+        
+        # Remove existing code signature before re-signing
+        sh "codesign --remove-signature '#{plugin_bundle}' 2>/dev/null || true"
+        sh "codesign --remove-signature '#{plugin_bundle}/#{plugin_name}' 2>/dev/null || true"
         
         # Sign the plugin framework
         sh "codesign --force --sign '#{signing_identity}' '#{plugin_bundle}'"
