@@ -261,10 +261,13 @@ platform :ios do
       sh "codesign --force --sign '#{signing_identity}' '#{app_path}'"
     end
 
-    # Repackage the IPA
+    # Repackage the IPA - include ALL folders, not just Payload
+    # IPA structure: Payload/, SwiftSupport/, WatchKitSupport2/, etc.
     FileUtils.rm_f(ipa_path)
     Dir.chdir(temp_dir) do
-      sh "zip -qr #{ipa_path} Payload"
+      # Find all top-level directories and files (excluding hidden files)
+      all_items = Dir.glob("*").reject { |f| f.start_with?(".") }
+      sh "zip -qr #{ipa_path} #{all_items.join(' ')}"
     end
 
     # Cleanup
