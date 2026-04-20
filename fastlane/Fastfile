@@ -263,6 +263,10 @@ platform :ios do
 
     # Repackage the IPA - include ALL folders, not just Payload
     # IPA structure: Payload/, SwiftSupport/, WatchKitSupport2/, etc.
+    # First, clean up temp files that shouldn't be in the IPA
+    FileUtils.rm_f("#{temp_dir}/app_entitlements.plist")
+    FileUtils.rm_f("#{temp_dir}/profile.plist")
+    
     FileUtils.rm_f(ipa_path)
     Dir.chdir(temp_dir) do
       # Find all top-level directories and files (excluding hidden files)
