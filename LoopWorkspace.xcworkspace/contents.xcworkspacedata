@@ -132,10 +132,4 @@
    <FileRef
       location = "group:LoopOnboarding/LoopOnboarding.xcodeproj">
    </FileRef>
-   <FileRef
-      location = "group:ApexKitBLE/ApexKitBLE.xcodeproj">
-   </FileRef>
-   <FileRef
-      location = "group:EmbectaKitBLE/EmbectaKitBLE.xcodeproj">
-   </FileRef>
 </Workspace>
