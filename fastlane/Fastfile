@@ -231,12 +231,26 @@ platform :ios do
     end
 
     # Re-sign the app bundle with the same certificate
-    # First, extract the existing entitlements to preserve them
-    entitlements_path = "#{temp_dir}/app_entitlements.plist"
-    sh "codesign -d --entitlements - '#{app_path}' > '#{entitlements_path}'"
+    # Use resign action which properly handles entitlements
+    # But we need to do it manually since we're working with an IPA
     
-    # Re-sign with the entitlements preserved
-    sh "codesign --force --sign '#{signing_identity}' --entitlements '#{entitlements_path}' '#{app_path}'"
+    # Extract the embedded provisioning profile to get entitlements
+    profile_path = "#{app_path}/embedded.mobileprovision"
+    if File.exist?(profile_path)
+      # Decode the provisioning profile to extract entitlements
+      profile_plist = "#{temp_dir}/profile.plist"
+      sh "security cms -D -i '#{profile_path}' > '#{profile_plist}'"
+      
+      # Extract entitlements from profile
+      entitlements_path = "#{temp_dir}/app_entitlements.plist"
+      sh "/usr/libexec/PlistBuddy -x -c 'Print Entitlements' '#{profile_plist}' > '#{entitlements_path}'"
+      
+      # Re-sign with the extracted entitlements
+      sh "codesign --force --sign '#{signing_identity}' --entitlements '#{entitlements_path}' '#{app_path}'"
+    else
+      # Fallback: just re-sign without entitlements (may fail on App Store)
+      sh "codesign --force --sign '#{signing_identity}' '#{app_path}'"
+    end
 
     # Repackage the IPA
     FileUtils.rm_f(ipa_path)
