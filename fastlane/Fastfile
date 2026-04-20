@@ -139,17 +139,17 @@ platform :ios do
 
   desc "Embed Pump Driver Frameworks into Loop.app"
   lane :embed_pump_frameworks do
-    # Define source framework paths
+    # Define source framework paths - each pump has main + plugin framework
     frameworks = [
       {
         name: "ApexKitBLE",
-        plugin_path: "#{GITHUB_WORKSPACE}/ApexKitBLE/ApexKitBLEPlugin",
-        main_path: "#{GITHUB_WORKSPACE}/ApexKitBLE/ApexKitBLE"
+        main_path: "#{GITHUB_WORKSPACE}/ApexKitBLE/ApexKitBLE",
+        plugin_path: "#{GITHUB_WORKSPACE}/ApexKitBLE/ApexKitBLEPlugin"
       },
       {
         name: "EmbectaKitBLE",
-        plugin_path: "#{GITHUB_WORKSPACE}/EmbectaKitBLE/EmbectaKitBLEPlugin",
-        main_path: "#{GITHUB_WORKSPACE}/EmbectaKitBLE/EmbectaKitBLE"
+        main_path: "#{GITHUB_WORKSPACE}/EmbectaKitBLE/EmbectaKitBLE",
+        plugin_path: "#{GITHUB_WORKSPACE}/EmbectaKitBLE/EmbectaKitBLEPlugin"
       }
     ]
 
@@ -191,43 +191,38 @@ platform :ios do
 
     # Copy and sign each framework
     frameworks.each do |fw|
-      next unless File.directory?(fw[:main_path])
+      # Embed the main BLE framework
+      if File.directory?(fw[:main_path])
+        puts "Processing #{fw[:name]}..."
 
-      puts "Processing #{fw[:name]}..."
-
-      # For ApexKitBLE and EmbectaKitBLE, we need to copy the .framework bundles
-      # The structure is: ApexKitBLE/ApexKitBLE/ (contains Info.plist, binary, etc.)
-      # We need to create proper .framework bundles
-
-      fw_name = fw[:name]
-      fw_bundle = "#{frameworks_dest}/#{fw_name}.framework"
-      
-      # Create framework bundle structure
-      FileUtils.mkdir_p(fw_bundle)
-
-      # Copy the main framework contents
-      # The ApexKitBLE/ApexKitBLE directory contains: ApexKitBLE (binary), Info.plist, Assets.car, etc.
-      main_fw_path = fw[:main_path]
-      
-      # Copy all files from the main framework directory
-      FileUtils.cp_r(Dir.glob("#{main_fw_path}/*"), fw_bundle)
-
-      # Also copy the plugin framework if it exists
-      plugin_path = fw[:plugin_path]
-      if File.directory?(plugin_path)
-        plugin_name = File.basename(plugin_path)
-        plugin_bundle = "#{frameworks_dest}/#{plugin_name}.framework"
-        FileUtils.mkdir_p(plugin_bundle)
-        FileUtils.cp_r(Dir.glob("#{plugin_path}/*"), plugin_bundle)
+        fw_bundle = "#{frameworks_dest}/#{fw[:name]}.framework"
+        FileUtils.mkdir_p(fw_bundle)
         
-        # Sign the plugin framework with the same certificate as the app
-        sh "codesign --force --sign '#{signing_identity}' '#{plugin_bundle}'"
+        # Copy all files from the main framework directory
+        FileUtils.cp_r(Dir.glob("#{fw[:main_path]}/*"), fw_bundle)
+        
+        # Sign the main framework
+        sh "codesign --force --sign '#{signing_identity}' '#{fw_bundle}'"
+        
+        puts "Embedded #{fw[:name]}.framework"
       end
 
-      # Sign the main framework with the same certificate as the app
-      sh "codesign --force --sign '#{signing_identity}' '#{fw_bundle}'"
+      # Embed the corresponding Plugin framework
+      if File.directory?(fw[:plugin_path])
+        plugin_name = File.basename(fw[:plugin_path])  # e.g., "ApexKitBLEPlugin"
+        puts "Processing #{plugin_name}..."
 
-      puts "Embedded #{fw_name}.framework"
+        plugin_bundle = "#{frameworks_dest}/#{plugin_name}.framework"
+        FileUtils.mkdir_p(plugin_bundle)
+        
+        # Copy all files from the plugin framework directory
+        FileUtils.cp_r(Dir.glob("#{fw[:plugin_path]}/*"), plugin_bundle)
+        
+        # Sign the plugin framework
+        sh "codesign --force --sign '#{signing_identity}' '#{plugin_bundle}'"
+        
+        puts "Embedded #{plugin_name}.framework"
+      end
     end
 
     # Re-sign the app bundle with the same certificate
