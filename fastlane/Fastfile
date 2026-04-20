@@ -218,15 +218,23 @@ platform :ios do
       puts "Embedded #{fw_name}.framework"
     end
 
-    # Re-sign the app with the provisioning profile
-    # Use the distribution certificate for signing
-    # The frameworks are already ad-hoc signed which is acceptable for embedded frameworks
+    # Re-sign the app with the correct distribution certificate
+    # We use the signing identity that was already configured by match
+    # The keychain already has the correct certificate installed
     
-    # Find the distribution certificate
-    dist_cert = Dir.glob("#{ENV['HOME']}/Library/MobileDevice/Certificates/*.p12").first
+    # Get the team ID and construct the signing identity
+    team_id = ENV["TEAMID"]
+    signing_identity = "Apple Distribution: #{team_id}"
+    
+    # Try to find the exact certificate name in the keychain
+    cert_info = `security find-identity -v -p codesigning 2>/dev/null | grep -i distribution | head -1`.strip
+    if cert_info.include?('"')
+      signing_identity = cert_info.match(/"(.+)"/)[1]
+      puts "Found signing identity: #{signing_identity}"
+    end
     
     # Re-sign the app bundle
-    sh "codesign --force --sign 'iPhone Distribution' '#{app_path}'"
+    sh "codesign --force --sign '#{signing_identity}' '#{app_path}'"
 
     # Repackage the IPA
     FileUtils.rm_f(ipa_path)
