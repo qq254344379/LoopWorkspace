@@ -142,21 +142,21 @@ platform :ios do
 
   desc "Patch PluginManager.swift to support embedded pump drivers"
   lane :patch_plugin_manager do
-    # Ensure Loop submodule is properly initialized and synced
-    Dir.chdir(GITHUB_WORKSPACE) do
-      # Sync submodule configuration
-      sh "git submodule sync --recursive 2>/dev/null || true"
-      # Force update the Loop submodule
-      sh "git submodule update --init --force Loop"
-    end
-    
+    # Submodules are already initialized by the checkout step
+    # Just check if the file exists
     plugin_manager_path = "#{GITHUB_WORKSPACE}/Loop/Plugins/PluginManager.swift"
     
     unless File.exist?(plugin_manager_path)
       puts "PluginManager.swift not found at #{plugin_manager_path}, skipping patch"
-      # List what's in Loop directory for debugging
+      # Better debugging
       if File.directory?("#{GITHUB_WORKSPACE}/Loop")
-        puts "Loop directory contents: #{Dir.glob("#{GITHUB_WORKSPACE}/Loop/**/*").first(10).join(', ')}"
+        puts "Loop directory exists"
+        if File.directory?("#{GITHUB_WORKSPACE}/Loop/Plugins")
+          puts "Plugins directory exists, contents: #{Dir.glob("#{GITHUB_WORKSPACE}/Loop/Plugins/*.swift").join(', ')}"
+        else
+          puts "Plugins directory DOES NOT EXIST"
+          puts "Loop subdirectories: #{Dir.glob("#{GITHUB_WORKSPACE}/Loop/*").select{|f| File.directory?(f)}.map{|f| File.basename(f)}.join(', ')}"
+        end
       else
         puts "Loop directory does not exist"
       end
