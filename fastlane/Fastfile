@@ -142,9 +142,12 @@ platform :ios do
 
   desc "Patch PluginManager.swift to support embedded pump drivers"
   lane :patch_plugin_manager do
-    # Ensure Loop submodule is initialized
+    # Ensure Loop submodule is properly initialized and synced
     Dir.chdir(GITHUB_WORKSPACE) do
-      sh "git submodule update --init --recursive Loop 2>/dev/null || true"
+      # Sync submodule configuration
+      sh "git submodule sync --recursive 2>/dev/null || true"
+      # Force update the Loop submodule
+      sh "git submodule update --init --force Loop"
     end
     
     plugin_manager_path = "#{GITHUB_WORKSPACE}/Loop/Plugins/PluginManager.swift"
