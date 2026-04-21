@@ -162,3 +162,5 @@ platform :ios do
     puts "Patched PluginManager.swift - replaced fatalError with return nil"
   end
 
+
+end
