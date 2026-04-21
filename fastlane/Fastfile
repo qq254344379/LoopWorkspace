@@ -142,10 +142,21 @@ platform :ios do
 
   desc "Patch PluginManager.swift to support embedded pump drivers"
   lane :patch_plugin_manager do
+    # Ensure Loop submodule is initialized
+    Dir.chdir(GITHUB_WORKSPACE) do
+      sh "git submodule update --init --recursive Loop 2>/dev/null || true"
+    end
+    
     plugin_manager_path = "#{GITHUB_WORKSPACE}/Loop/Plugins/PluginManager.swift"
     
     unless File.exist?(plugin_manager_path)
-      puts "PluginManager.swift not found, skipping patch"
+      puts "PluginManager.swift not found at #{plugin_manager_path}, skipping patch"
+      # List what's in Loop directory for debugging
+      if File.directory?("#{GITHUB_WORKSPACE}/Loop")
+        puts "Loop directory contents: #{Dir.glob("#{GITHUB_WORKSPACE}/Loop/**/*").first(10).join(', ')}"
+      else
+        puts "Loop directory does not exist"
+      end
       next
     end
     
