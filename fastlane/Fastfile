@@ -144,7 +144,7 @@ platform :ios do
   lane :patch_plugin_manager do
     # Submodules are already initialized by the checkout step
     # Just check if the file exists
-    plugin_manager_path = "#{GITHUB_WORKSPACE}/Loop/Plugins/PluginManager.swift"
+    plugin_manager_path = "#{GITHUB_WORKSPACE}/Loop/Loop/Plugins/PluginManager.swift"
     
     unless File.exist?(plugin_manager_path)
       puts "PluginManager.swift not found at #{plugin_manager_path}, skipping patch"
