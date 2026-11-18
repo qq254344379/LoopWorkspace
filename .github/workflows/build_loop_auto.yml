@@ -235,6 +235,15 @@ jobs:
           # Several patches may be added per submodule.
           # Adding comments (#) may be useful to easily tell the individual patches apart.
 
+      # Customize Loop: add xDrip4iOS CGM client (loopandlearn xdrip_cgm customization)
+      - name: Customize Loop - xDrip4iOS CGM Client
+        run: |
+          # Applies the xdrip_cgm patch (adds xdrip-client-swift submodule,
+          # references it in LoopWorkspace.xcworkspace and the Loop scheme)
+          # then clones the xdrip-client-swift submodule used as the CGM client.
+          curl -fsSL https://raw.githubusercontent.com/loopandlearn/lnl-scripts/main/CustomizationSelect.sh -o /tmp/CustomizationSelect.sh
+          chmod +x /tmp/CustomizationSelect.sh
+          /bin/bash /tmp/CustomizationSelect.sh xdrip_cgm
       # Patch Fastlane Match to not print tables
       - name: Patch Match Tables
         run: |
